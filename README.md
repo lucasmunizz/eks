@@ -11,21 +11,26 @@ Este projeto configura uma infraestrutura na AWS usando Terraform para deploy de
 
 ## Estrutura do Projeto
 
-src/                          # Arquivos Terraform
+eks/
+│
+├── src/                          # Arquivos Terraform
 │   ├── main.tf                  # VPC, EKS, ECR
 │   ├── provider.tf              # Provedor AWS
 │   ├── variables.tf             # Variáveis
 │   └── terraform.tfvars         # Valores das variáveis
-api/                             # Código da API Spring Boot
+│
+├── api/                         # Código da API Spring Boot
 │   ├── src/                     # Código fonte (Java)
 │   ├── Dockerfile               # Configuração da imagem Docker
 │   ├── pom.xml                  # Dependências Maven
 │   └── k8s/                     # Manifests Kubernetes
 │       ├── deployment.yaml      # Deployment da API
 │       └── service.yaml         # Serviço com Load Balancer
-.github/
+│
+├── .github/                     # Configurações do GitHub
 │   └── workflows/
 │       └── terraform.yml        # Workflow GitHub Actions
+│
 └── README.md                    # Este arquivo
 
 
