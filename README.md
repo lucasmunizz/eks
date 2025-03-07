@@ -11,6 +11,7 @@ Este projeto configura uma infraestrutura na AWS usando Terraform para deploy de
 
 ## Estrutura do Projeto
 
+```code
 eks/
 │
 ├── src/                          # Arquivos Terraform
@@ -32,7 +33,7 @@ eks/
 │       └── terraform.yml        # Workflow GitHub Actions
 │
 └── README.md                    # Este arquivo
-
+```
 
 
 ## Componentes
