@@ -21,12 +21,52 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-            terraform_version: "1.5.0"
+          terraform_version: "1.5.0"
+
+      - name: Setup Kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
 
       - name: Terraform Init
         working-directory: ./src
         run: terraform init -backend-config="bucket=${{ secrets.AWS_BUCKET_NAME }}" -backend-config="key=${{ secrets.AWS_BUCKET_FILE }}"
 
-      - name: Terraform destroy
+      - name: Configurar Kubectl para EKS
+        run: |
+          aws eks update-kubeconfig --region us-east-1 --name eks-api
+
+      - name: Limpar Recursos do Kubernetes
+        run: |
+          kubectl delete -f api/k8s/deployment.yaml --ignore-not-found=true
+          kubectl delete -f api/k8s/service.yaml --ignore-not-found=true
+          sleep 60
+
+      - name: Limpar Load Balancer (ELBv2)
+        run: |
+          LB_ARN=$(aws elbv2 describe-load-balancers --region us-east-1 --query "LoadBalancers[?VpcId=='vpc-0a4e84ddad22fab54'].LoadBalancerArn" --output text)
+          if [ -n "$LB_ARN" ]; then
+            aws elbv2 delete-load-balancer --region us-east-1 --load-balancer-arn "$LB_ARN"
+            sleep 120
+          fi
+
+      - name: Limpar Load Balancer Clássico (ELB v1)
+        run: |
+          LB_NAME=$(aws elb describe-load-balancers --region us-east-1 --query "LoadBalancerDescriptions[?VPCId=='vpc-0a4e84ddad22fab54'].LoadBalancerName" --output text)
+          if [ -n "$LB_NAME" ]; then
+            aws elb delete-load-balancer --region us-east-1 --load-balancer-name "$LB_NAME"
+            sleep 120
+          fi
+
+      - name: Limpar ENIs Residuais
+        run: |
+          ENIS=$(aws ec2 describe-network-interfaces --region us-east-1 --filters "Name=vpc-id,Values=vpc-0a4e84ddad22fab54" --query "NetworkInterfaces[*].NetworkInterfaceId" --output text)
+          for ENI in $ENIS; do
+            echo "Tentando excluir ENI: $ENI"
+            aws ec2 delete-network-interface --region us-east-1 --network-interface-id $ENI || echo "ENI $ENI ainda em uso, ignorando por agora"
+          done
+          sleep 60
+
+      - name: Terraform Destroy
         working-directory: ./src
         run: terraform destroy --auto-approve
