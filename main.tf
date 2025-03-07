@@ -50,4 +50,5 @@ module "eks" {
   }
 
   tags = var.aws_project_tags
+
 }
