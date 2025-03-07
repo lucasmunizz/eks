@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: spring-boot-api
-          image: "<ECR_URL>:latest" # Substitua pelo URL do ECR após terraform apply
+          image: "<519095569402.dkr.ecr.us-east-1.amazonaws.com/spring-boot-api-repo>:latest"
           ports:
             - containerPort: 8080
           resources:
