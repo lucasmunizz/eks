@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spring-boot-api
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spring-boot-api
+  template:
+    metadata:
+      labels:
+        app: spring-boot-api
+    spec:
+      containers:
+        - name: spring-boot-api
+          image: "<ECR_URL>:latest" # Substitua pelo URL do ECR após terraform apply
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "500m"
+              memory: "1024Mi"

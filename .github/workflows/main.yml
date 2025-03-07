@@ -1,14 +1,14 @@
-name: "Terraform"
+name: "Terraform and Deploy"
 
 on:
   push:
     branches: ["main"]
-    paths: ["src/**"]
+    paths: ["src/**", "api/**"] # Inclua o diretório da API
   workflow_dispatch:
 
 jobs:
-  terraform:
-    name: "Terraform Apply"
+  deploy:
+    name: "Deploy API to EKS"
     runs-on: "ubuntu-latest"
     steps:
       - name: "Configure AWS Credentials"
@@ -24,12 +24,30 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-            terraform_version: "1.5.0"
+          terraform_version: "1.5.0"
 
-      - name: Terraform init
+      - name: Terraform Init
         working-directory: ./src
         run: terraform init -backend-config="bucket=${{ secrets.AWS_BUCKET_NAME }}" -backend-config="key=${{ secrets.AWS_BUCKET_FILE }}"
 
       - name: Terraform Apply
         working-directory: ./src
         run: terraform apply --auto-approve
+
+      - name: Get ECR Login
+        run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $(terraform output -raw ecr_repository_url)
+
+      - name: Build and Push Docker Image
+        working-directory: ./api # Ajuste para o diretório da sua API
+        run: |
+          docker build -t spring-boot-api:latest .
+          docker tag spring-boot-api:latest $(terraform output -raw ecr_repository_url):latest
+          docker push $(terraform output -raw ecr_repository_url):latest
+
+      - name: Configure Kubectl
+        run: |
+          aws eks update-kubeconfig --region us-east-1 --name eks-api
+
+      - name: Deploy to EKS
+        working-directory: ./api/k8s # Ajuste para o diretório dos manifests
+        run: kubectl apply -f deployment.yaml -f service.yaml

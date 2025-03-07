@@ -52,3 +52,16 @@ module "eks" {
   tags = var.aws_project_tags
 
 }
+
+resource "aws_ecr_repository" "spring_boot_api" {
+  name                 = "spring-boot-api-repo"
+  image_tag_mutability = "MUTABLE"
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+  tags = var.aws_project_tags
+}
+
+output "ecr_repository_url" {
+  value = aws_ecr_repository.spring_boot_api.repository_url
+}
