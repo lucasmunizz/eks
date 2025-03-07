@@ -3,7 +3,7 @@ name: "Terraform and Deploy"
 on:
   push:
     branches: ["main"]
-    paths: ["src/**", "api/**"] # Inclua o diretório da API
+    paths: ["src/**", "api/**"]
   workflow_dispatch:
 
 jobs:
@@ -34,20 +34,25 @@ jobs:
         working-directory: ./src
         run: terraform apply --auto-approve
 
+      - name: Get ECR Repository URL
+        id: ecr
+        working-directory: ./src
+        run: echo "ECR_URL=$(terraform output -raw ecr_repository_url)" >> $GITHUB_OUTPUT
+
       - name: Get ECR Login
-        run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $(terraform output -raw ecr_repository_url)
+        run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.ECR_URL }}
 
       - name: Build and Push Docker Image
-        working-directory: ./api # Ajuste para o diretório da sua API
+        working-directory: ./api
         run: |
           docker build -t spring-boot-api:latest .
-          docker tag spring-boot-api:latest $(terraform output -raw ecr_repository_url):latest
-          docker push $(terraform output -raw ecr_repository_url):latest
+          docker tag spring-boot-api:latest ${{ steps.ecr.outputs.ECR_URL }}:latest
+          docker push ${{ steps.ecr.outputs.ECR_URL }}:latest
 
       - name: Configure Kubectl
         run: |
           aws eks update-kubeconfig --region us-east-1 --name eks-api
 
       - name: Deploy to EKS
-        working-directory: ./api/k8s # Ajuste para o diretório dos manifests
+        working-directory: ./api/k8s
         run: kubectl apply -f deployment.yaml -f service.yaml
