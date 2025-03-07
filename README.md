@@ -114,4 +114,5 @@ cd eks
 ```
 - Esperado: "fui deployado no eks"
 
+![response](./assets/eks.png)
 
