@@ -58,3 +58,8 @@ variable "aws_project_tags" {
   type        = map(any)
   nullable    = false
 }
+
+variable "aws_ecr_name" {
+  type = string
+  nullable = false
+}

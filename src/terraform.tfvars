@@ -12,3 +12,4 @@ aws_project_tags = {
   Environment = "producao"
   Project     = "deploy-eks"
 }
+aws_ecr_name = "spring-boot-api-repo"

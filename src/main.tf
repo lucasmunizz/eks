@@ -54,7 +54,8 @@ module "eks" {
 }
 
 resource "aws_ecr_repository" "spring_boot_api" {
-  name                 = "spring-boot-api-repo"
+  name                 = var.aws_ecr_name
+  force_delete = true
   image_tag_mutability = "MUTABLE"
   image_scanning_configuration {
     scan_on_push = true
