@@ -97,7 +97,7 @@ jobs:
             done
             sleep 30
 
-            echo "Removendo gateways..."
+            echo "Removendo gateways.."
             IGW=$(aws ec2 describe-internet-gateways --region us-east-1 --filters "Name=attachment.vpc-id,Values=$VPC_ID" --query "InternetGateways[].InternetGatewayId" --output text 2>/dev/null || echo "")
             if [ -n "$IGW" ]; then
               aws ec2 detach-internet-gateway --region us-east-1 --internet-gateway-id "$IGW" --vpc-id "$VPC_ID"
