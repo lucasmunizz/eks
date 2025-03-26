@@ -1,18 +1,18 @@
-name: "Terraform destroy"
+name: "Terraform Destroy"
 
 on:
   workflow_dispatch:
 
 jobs:
   terraform:
-    name: "Terraform destroy"
+    name: "Terraform Destroy"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configurar as credenciais da AWS
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -32,41 +32,86 @@ jobs:
         working-directory: ./src
         run: terraform init -backend-config="bucket=${{ secrets.AWS_BUCKET_NAME }}" -backend-config="key=${{ secrets.AWS_BUCKET_FILE }}"
 
+      - name: Verificar e Remover Cluster EKS
+        run: |
+          CLUSTER_EXISTS=$(aws eks describe-cluster --name eks-api --region us-east-1 --query "cluster.status" --output text 2>/dev/null || echo "notfound")
+          if [ "$CLUSTER_EXISTS" != "notfound" ]; then
+            aws eks delete-cluster --name eks-api --region us-east-1
+            echo "Cluster EKS removido. Aguardando..."
+            sleep 120
+          else
+            echo "Cluster EKS não encontrado. Ignorando..."
+          fi
+
       - name: Configurar Kubectl para EKS
         run: |
-          aws eks update-kubeconfig --region us-east-1 --name eks-api
+          aws eks update-kubeconfig --region us-east-1 --name eks-api || echo "Cluster não encontrado, ignorando configuração"
 
-      - name: Limpar Recursos do Kubernetes
+      - name: Remover Recursos do Kubernetes
         run: |
-          kubectl delete -f api/k8s/deployment.yaml --ignore-not-found=true
-          kubectl delete -f api/k8s/service.yaml --ignore-not-found=true
+          kubectl delete -f api/k8s/deployment.yaml --ignore-not-found=true || echo "Deployment não encontrado"
+          kubectl delete -f api/k8s/service.yaml --ignore-not-found=true || echo "Service não encontrado"
           sleep 60
 
-      - name: Limpar Load Balancer (ELBv2)
+      - name: Remover Load Balancer (ELBv2)
         run: |
-          LB_ARN=$(aws elbv2 describe-load-balancers --region us-east-1 --query "LoadBalancers[?VpcId=='vpc-0a4e84ddad22fab54'].LoadBalancerArn" --output text)
+          LB_ARN=$(aws elbv2 describe-load-balancers --region us-east-1 --query "LoadBalancers[].LoadBalancerArn" --output text 2>/dev/null || echo "")
           if [ -n "$LB_ARN" ]; then
             aws elbv2 delete-load-balancer --region us-east-1 --load-balancer-arn "$LB_ARN"
+            echo "Load Balancer removido. Aguardando..."
             sleep 120
+          else
+            echo "Nenhum Load Balancer encontrado. Ignorando..."
           fi
 
-      - name: Limpar Load Balancer Clássico (ELB v1)
+      - name: Remover Load Balancer Clássico (ELB v1)
         run: |
-          LB_NAME=$(aws elb describe-load-balancers --region us-east-1 --query "LoadBalancerDescriptions[?VPCId=='vpc-0a4e84ddad22fab54'].LoadBalancerName" --output text)
-          if [ -n "$LB_NAME" ]; then
+          LB_NAMES=$(aws elb describe-load-balancers --region us-east-1 --query "LoadBalancerDescriptions[].LoadBalancerName" --output text 2>/dev/null || echo "")
+          for LB_NAME in $LB_NAMES; do
             aws elb delete-load-balancer --region us-east-1 --load-balancer-name "$LB_NAME"
+            echo "Load Balancer Clássico $LB_NAME removido. Aguardando..."
             sleep 120
-          fi
+          done
 
-      - name: Limpar ENIs Residuais
+      - name: Remover ENIs (Network Interfaces)
         run: |
-          ENIS=$(aws ec2 describe-network-interfaces --region us-east-1 --filters "Name=vpc-id,Values=vpc-0a4e84ddad22fab54" --query "NetworkInterfaces[*].NetworkInterfaceId" --output text)
+          ENIS=$(aws ec2 describe-network-interfaces --region us-east-1 --query "NetworkInterfaces[].NetworkInterfaceId" --output text 2>/dev/null || echo "")
           for ENI in $ENIS; do
             echo "Tentando excluir ENI: $ENI"
-            aws ec2 delete-network-interface --region us-east-1 --network-interface-id $ENI || echo "ENI $ENI ainda em uso, ignorando por agora"
+            aws ec2 delete-network-interface --region us-east-1 --network-interface-id $ENI || echo "ENI $ENI ainda em uso, ignorando..."
           done
           sleep 60
 
       - name: Terraform Destroy
         working-directory: ./src
         run: terraform destroy --auto-approve
+
+      - name: Remover VPC e Recursos Relacionados
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs --region us-east-1 --query "Vpcs[?IsDefault==false].VpcId" --output text 2>/dev/null || echo "")
+          if [ -n "$VPC_ID" ]; then
+            echo "Removendo subnets..."
+            SUBNETS=$(aws ec2 describe-subnets --region us-east-1 --filters "Name=vpc-id,Values=$VPC_ID" --query "Subnets[].SubnetId" --output text 2>/dev/null || echo "")
+            for SUBNET in $SUBNETS; do
+              aws ec2 delete-subnet --region us-east-1 --subnet-id "$SUBNET" || echo "Falha ao remover subnet $SUBNET"
+            done
+            sleep 30
+
+            echo "Removendo gateways..."
+            IGW=$(aws ec2 describe-internet-gateways --region us-east-1 --filters "Name=attachment.vpc-id,Values=$VPC_ID" --query "InternetGateways[].InternetGatewayId" --output text 2>/dev/null || echo "")
+            if [ -n "$IGW" ]; then
+              aws ec2 detach-internet-gateway --region us-east-1 --internet-gateway-id "$IGW" --vpc-id "$VPC_ID"
+              aws ec2 delete-internet-gateway --region us-east-1 --internet-gateway-id "$IGW"
+            fi
+
+            echo "Removendo security groups..."
+            SG_IDS=$(aws ec2 describe-security-groups --region us-east-1 --filters "Name=vpc-id,Values=$VPC_ID" --query "SecurityGroups[?GroupName!='default'].GroupId" --output text 2>/dev/null || echo "")
+            for SG in $SG_IDS; do
+              aws ec2 delete-security-group --region us-east-1 --group-id "$SG" || echo "Falha ao remover SG $SG"
+            done
+
+            echo "Removendo VPC..."
+            aws ec2 delete-vpc --region us-east-1 --vpc-id "$VPC_ID" || echo "Falha ao remover VPC $VPC_ID"
+          else
+            echo "Nenhuma VPC personalizada encontrada. Ignorando..."
+          fi
